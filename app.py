@@ -6,14 +6,12 @@ import pandas as pd
 import os
 from io import StringIO
 
-# Correção para o erro do openpyxl
+# Verificação do openpyxl
 try:
     import openpyxl
 except ImportError:
-    import sys
-    import subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "openpyxl"])
-    import openpyxl
+    st.error("❌ A biblioteca 'openpyxl' não está instalada. Adicione 'openpyxl' ao arquivo requirements.txt")
+    st.stop()
 
 # Tentar importar rapidfuzz, com fallback para fuzzywuzzy
 try:
