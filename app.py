@@ -19,12 +19,32 @@
 
 import streamlit as st
 import pandas as pd
-from rapidfuzz import process, fuzz
 from io import StringIO
+
+# Tentar importar rapidfuzz, com fallback para fuzzywuzzy ou busca simples
+try:
+    from rapidfuzz import process, fuzz
+    FUZZY_AVAILABLE = True
+    FUZZY_LIB = "rapidfuzz"
+except ImportError:
+    try:
+        from fuzzywuzzy import process, fuzz
+        from fuzzywuzzy.utils import full_process
+        FUZZY_AVAILABLE = True
+        FUZZY_LIB = "fuzzywuzzy"
+    except ImportError:
+        FUZZY_AVAILABLE = False
+        FUZZY_LIB = "none"
 
 st.set_page_config(page_title='Consulta Descritivo de Função', layout='centered')
 st.title('Consulta de Descritivo de Função')
 st.markdown('Busque pelo **nome da função** e veja as atividades e o CBO.')
+
+# Adicionar informação sobre a biblioteca de busca
+if FUZZY_AVAILABLE:
+    st.sidebar.info(f"Usando {FUZZY_LIB} para busca fuzzy")
+else:
+    st.sidebar.warning("Biblioteca fuzzy não encontrada. Usando busca simples.")
 
 # Função utilitária para carregar dados
 @st.cache_data
