@@ -31,9 +31,9 @@ except ImportError:
 st.set_page_config(page_title='Consulta Descritivo de Função', layout='centered')
 
 # --- LOGO DA EMPRESA ---
-col1, col2, col3 = st.columns([1, 2, 1])
+col1, col2, col3 = st.columns([1, 3, 1])
 with col2:
-    st.image("logo.png", width=200)  # Altere para o nome do seu arquivo de logo
+    st.image("logo.png", width=250)  # Altere para o nome do seu arquivo de logo
 # --- FIM DA LOGO ---
 
 st.title('Consulta de Descritivo de Função')
