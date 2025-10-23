@@ -33,7 +33,7 @@ st.set_page_config(page_title='Consulta Descritivo de Função', layout='centere
 # --- LOGO DA EMPRESA ---
 col1, col2, col3 = st.columns([1, 1, 1])
 with col2:
-    st.image("logo.png", width=250)  # Altere para o nome do seu arquivo de logo
+    st.image("logo.png", width=300)  # Altere para o nome do seu arquivo de logo
 # --- FIM DA LOGO ---
 
 st.title('Consulta de Descritivo de Função')
