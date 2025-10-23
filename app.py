@@ -1,12 +1,11 @@
 # Consulta Descritivo de Função (Streamlit)
 # Arquivo: app.py
-# Objetivo: ambiente simples para consultar descritivos de função por nome da função
 
 import streamlit as st
 import pandas as pd
 from io import StringIO
 
-# Tentar importar rapidfuzz, com fallback para fuzzywuzzy ou busca simples
+# Tentar importar rapidfuzz, com fallback para fuzzywuzzy
 try:
     from rapidfuzz import process, fuzz
     FUZZY_AVAILABLE = True
@@ -27,9 +26,9 @@ st.markdown('Busque pelo **nome da função** e veja as atividades e o CBO.')
 
 # Adicionar informação sobre a biblioteca de busca
 if FUZZY_AVAILABLE:
-    st.sidebar.info(f"Usando {FUZZY_LIB} para busca fuzzy")
+    st.sidebar.success(f"✓ Usando {FUZZY_LIB} para busca fuzzy")
 else:
-    st.sidebar.warning("Biblioteca fuzzy não disponível. Usando busca simples.")
+    st.sidebar.error("✗ Biblioteca fuzzy não disponível")
 
 # Função utilitária para carregar dados
 @st.cache_data
@@ -58,15 +57,17 @@ def sample_df():
             'Enfermeiro',
             'Técnico em Enfermagem',
             'Coordenador de Vendas',
-            'Auxiliar Administrativo'
+            'Auxiliar Administrativo',
+            'Analista de Remuneração'
         ],
-        'CBO': ['2524-05', '2235-10', '3222-05', '1421-10', '4110-05'],
+        'CBO': ['2524-05', '2235-10', '3222-05', '1421-10', '4110-05', '2524-10'],
         'Atividades': [
             'Recrutamento; Seleção; Treinamento e desenvolvimento; Administração de pessoal',
             'Assistência de enfermagem, administração de medicamentos, plantões, cuidados ao paciente',
             'Cuidados básicos de enfermagem; curativos; aferição de sinais vitais; suporte à equipe',
             'Gestão de equipe de vendas; acompanhamento de metas; planejamento comercial',
-            'Atendimento ao cliente; organização de documentos; apoio administrativo'
+            'Atendimento ao cliente; organização de documentos; apoio administrativo',
+            'Cálculo de salários; benefícios; pesquisa salarial; estrutura de cargos e salários'
         ]
     }
     return pd.DataFrame(data)
@@ -89,123 +90,138 @@ if df is None:
     st.warning('Nenhuma base carregada. Faça upload de um CSV/Excel ou habilite a base de exemplo na barra lateral.')
     st.stop()
 
-# Normaliza nomes de colunas (tolerância a variações)
+# Normaliza nomes de colunas
 cols = {c.lower(): c for c in df.columns}
-required = ['função', 'funcao', 'cbo', 'atividades', 'atividades/atividade']
-# Mapeia colunas mais prováveis
 fun_col = None
 cbo_col = None
 act_col = None
+
 for lc, orig in cols.items():
     if 'fun' in lc:
         fun_col = orig
-    if 'cbo' == lc or 'cbo' in lc:
+    if 'cbo' == lc:
         cbo_col = orig
-    if 'ativ' in lc or 'atividade' in lc:
+    if 'ativ' in lc:
         act_col = orig
 
-# Se não encontrou colunas essenciais, mostra instrução
 if fun_col is None or cbo_col is None or act_col is None:
-    st.error('Colunas esperadas não encontradas. Certifique-se de ter colunas com nomes parecidos com: Função, CBO, Atividades.')
+    st.error('Colunas esperadas não encontradas. Certifique-se de ter colunas: Função, CBO, Atividades.')
     st.write('Colunas detectadas:', list(df.columns))
     st.stop()
 
 # Preprocessa coluna de função para busca
-df['__fun_lower'] = df[fun_col].astype(str).str.strip()
+df['__fun_lower'] = df[fun_col].astype(str).str.strip().str.lower()
 
 st.write('Base carregada — linhas:', len(df))
+st.write('📋 Funções disponíveis:', ', '.join(df[fun_col].astype(str).tolist()))
 
-query = st.text_input('Nome da função para buscar', value='')
+query = st.text_input('Nome da função para buscar', value='', placeholder='Ex: Analista de RH, Enfermeiro...')
 
-# Mostrar controle de sensibilidade apenas se fuzzy estiver disponível
 if FUZZY_AVAILABLE:
     min_score = st.slider('Sensibilidade da busca (fuzzy) — menor = mais permissiva', 50, 100, 80)
-else:
-    min_score = 0  # Não usado na busca simples
 
 def fuzzy_search(query, choices, min_score, limit=10):
-    """Função unificada para busca fuzzy com ambas as bibliotecas"""
+    """Função unificada para busca fuzzy"""
     if FUZZY_LIB == "rapidfuzz":
         matches = process.extract(query, choices, scorer=fuzz.WRatio, limit=limit)
         return [(match[0], match[1], match[2]) for match in matches]
     elif FUZZY_LIB == "fuzzywuzzy":
-        from fuzzywuzzy import process as fuzzy_process
-        matches = fuzzy_process.extract(query, choices, limit=limit)
+        matches = process.extract(query, choices, limit=limit)
         return [(match[0], match[1], idx) for idx, match in enumerate(matches)]
-    else:
-        return []
+    return []
 
 if query:
-    # Busca exata (case-insensitive)
-    mask_exact = df['__fun_lower'].str.lower() == query.strip().lower()
+    # Busca exata
+    mask_exact = df['__fun_lower'] == query.strip().lower()
     results = df[mask_exact]
 
     if not results.empty:
-        st.success(f'Encontrado {len(results)} correspondência(s) exata(s)')
+        st.success(f'🎯 Encontrado {len(results)} correspondência(s) exata(s)')
         for idx, row in results.iterrows():
             st.subheader(row[fun_col])
-            st.write('CBO:', row[cbo_col])
+            st.write('**CBO:**', row[cbo_col])
             st.markdown('**Atividades:**')
-            # Formata atividades em lista
             acts = str(row[act_col]).replace('\r', '\n')
             sep = ';' if ';' in acts else '\n'
             for a in [x.strip() for x in acts.split(sep) if x.strip()]:
-                st.write('- ' + a)
+                st.write('• ' + a)
     else:
         if FUZZY_AVAILABLE:
             # Busca fuzzy
             choices = df['__fun_lower'].tolist()
             matches = fuzzy_search(query, choices, min_score, limit=10)
-            
-            # Filtra por min_score
             good = [m for m in matches if m[1] >= min_score]
             
             if not good:
-                st.warning('Nenhuma correspondência com o nível de sensibilidade escolhido. Tente reduzir a exigência ou verifique sua digitação.')
-                st.write('Melhores sugestões:')
-                for m in matches[:5]:
-                    st.write(f"{m[0]} — {m[1]}%")
+                st.warning(f'❌ Nenhuma correspondência com score ≥ {min_score}%')
+                st.write('🔍 Melhores sugestões:')
+                for m in matches[:3]:
+                    original_name = df[df['__fun_lower'] == m[0]].iloc[0][fun_col]
+                    st.write(f"- {original_name} — {m[1]:.0f}%")
             else:
-                st.success(f'{len(good)} sugestão(ões) encontrada(s) (score >= {min_score})')
+                st.success(f'✅ {len(good)} sugestão(ões) encontrada(s)')
                 for m in good:
-                    choice_text = m[0]
-                    score = m[1]
-                    # recupera a linha correspondente
-                    row = df[df['__fun_lower'] == choice_text].iloc[0]
-                    st.subheader(f"{row[fun_col]} — {score}%")
-                    st.write('CBO:', row[cbo_col])
+                    row = df[df['__fun_lower'] == m[0]].iloc[0]
+                    st.subheader(f"{row[fun_col]} — {m[1]:.0f}%")
+                    st.write('**CBO:**', row[cbo_col])
                     st.markdown('**Atividades:**')
                     acts = str(row[act_col]).replace('\r', '\n')
                     sep = ';' if ';' in acts else '\n'
                     for a in [x.strip() for x in acts.split(sep) if x.strip()]:
-                        st.write('- ' + a)
+                        st.write('• ' + a)
         else:
-            # Busca simples (sem fuzzy)
-            st.warning("Biblioteca fuzzy não disponível. Instale rapidfuzz ou fuzzywuzzy para buscas avançadas.")
+            # Busca sem fuzzy - melhorada
+            st.warning("⚡ Buscando sem biblioteca fuzzy...")
+            
             # Busca por substring
-            mask_substring = df['__fun_lower'].str.lower().str.contains(query.strip().lower(), na=False)
+            mask_substring = df['__fun_lower'].str.contains(query.strip().lower(), na=False)
             results_sub = df[mask_substring]
+            
             if not results_sub.empty:
-                st.success(f'Encontrado {len(results_sub)} correspondência(s) por texto parcial')
+                st.success(f'🔍 Encontrado {len(results_sub)} correspondência(s) por texto parcial')
                 for idx, row in results_sub.iterrows():
                     st.subheader(row[fun_col])
-                    st.write('CBO:', row[cbo_col])
+                    st.write('**CBO:**', row[cbo_col])
                     st.markdown('**Atividades:**')
                     acts = str(row[act_col]).replace('\r', '\n')
                     sep = ';' if ';' in acts else '\n'
                     for a in [x.strip() for x in acts.split(sep) if x.strip()]:
-                        st.write('- ' + a)
+                        st.write('• ' + a)
             else:
-                st.warning('Nenhuma correspondência encontrada. Tente outros termos.')
+                # Busca por palavras-chave
+                query_words = [w for w in query.strip().lower().split() if len(w) > 3]
+                if query_words:
+                    st.info(f"🔎 Tentando busca por palavras-chave: {', '.join(query_words)}")
+                    mask_words = pd.Series([False] * len(df))
+                    for word in query_words:
+                        mask_words = mask_words | df['__fun_lower'].str.contains(word, na=False)
+                    
+                    results_words = df[mask_words]
+                    if not results_words.empty:
+                        st.success(f'✅ Encontrado {len(results_words)} correspondência(s) por palavras-chave')
+                        for idx, row in results_words.iterrows():
+                            st.subheader(row[fun_col])
+                            st.write('**CBO:**', row[cbo_col])
+                            st.markdown('**Atividades:**')
+                            acts = str(row[act_col]).replace('\r', '\n')
+                            sep = ';' if ';' in acts else '\n'
+                            for a in [x.strip() for x in acts.split(sep) if x.strip()]:
+                                st.write('• ' + a)
+                    else:
+                        st.error('❌ Nenhuma correspondência encontrada.')
+                        st.info("💡 **Dicas:** Tente termos mais curtos ou sinônimos")
+                else:
+                    st.error('❌ Nenhuma correspondência encontrada.')
+                    st.info("💡 **Dica:** Use palavras-chave mais específicas")
 
-# Permite baixar a base atual (por segurança/backup)
+# Download
 csv = df.drop(columns=['__fun_lower']).to_csv(index=False)
-st.download_button('Baixar base atual (CSV)', data=csv, file_name='base_descritivo_funcoes.csv', mime='text/csv')
+st.download_button('💾 Baixar base atual (CSV)', data=csv, file_name='base_descritivo_funcoes.csv', mime='text/csv')
 
-# Instruções de instalação se necessário
+# Instruções de instalação
 if not FUZZY_AVAILABLE:
-    st.warning("""
-    **Para melhorar as buscas, instale uma biblioteca fuzzy:**
+    st.error("""
+    **🚨 Para buscas mais eficientes, instale uma biblioteca fuzzy:**
     
     **Opção 1 (Recomendada):**
     ```bash
@@ -218,6 +234,4 @@ if not FUZZY_AVAILABLE:
     ```
     """)
 
-st.info('Dica: para melhorar a busca, padronize os nomes das funções (ex.: sem abreviações) e mantenha as atividades separadas por ponto e vírgula ou quebra de linha.')
-
-# Fim do app
+st.info('💡 **Dica:** Para melhorar a busca, use termos específicos como "Analista RH" em vez de "analista de recursos humanos"')
