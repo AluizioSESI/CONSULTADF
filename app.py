@@ -186,7 +186,7 @@ if fun_col is None or cbo_col is None or act_col is None:
 df['__fun_lower'] = df[fun_col].astype(str).str.strip().str.lower()
 
 st.write('Base carregada — linhas:', len(df))
-st.write('📋 Funções disponíveis:', ', '.join(df[fun_col].astype(str).tolist()))
+st.write(f'📋 Total de funções na base: {len(df)}')
 
 query = st.text_input('Nome da função para buscar', value='', placeholder='Ex: Analista de RH, Enfermeiro...')
 
