@@ -1,21 +1,6 @@
 # Consulta Descritivo de Função (Streamlit)
 # Arquivo: app.py
 # Objetivo: ambiente simples para consultar descritivos de função por nome da função
-# Saída: atividades (lista/texto) e CBO (código)
-# Requisitos:
-#   pip install streamlit pandas rapidfuzz openpyxl
-# Uso:
-#   1. Salve este arquivo como app.py
-#   2. Prepare um arquivo CSV com colunas: "Função", "CBO", "Atividades"
-#      - Exemplo de linha:
-#        "Analista de RH", "2524-05", "Recrutamento; Seleção; Treinamento"
-#   3. Execute: streamlit run app.py
-#   4. No navegador, busque pelo nome da função (aceita buscas parciais e fuzzy)
-
-# Observações:
-# - O campo 'Atividades' pode ser um texto longo com itens separados por ';' ou '\n'.
-# - O app faz match exato primeiro e, se não encontrar, apresenta as melhores correspondências (fuzzy).
-# - Permite upload de CSV/Excel e também usar a base de exemplo embutida.
 
 import streamlit as st
 import pandas as pd
@@ -29,7 +14,7 @@ try:
 except ImportError:
     try:
         from fuzzywuzzy import process, fuzz
-        from fuzzywuzzy.utils import full_process
+        from fuzzywuzzy import process as fuzzy_process
         FUZZY_AVAILABLE = True
         FUZZY_LIB = "fuzzywuzzy"
     except ImportError:
@@ -44,7 +29,7 @@ st.markdown('Busque pelo **nome da função** e veja as atividades e o CBO.')
 if FUZZY_AVAILABLE:
     st.sidebar.info(f"Usando {FUZZY_LIB} para busca fuzzy")
 else:
-    st.sidebar.warning("Biblioteca fuzzy não encontrada. Usando busca simples.")
+    st.sidebar.warning("Biblioteca fuzzy não disponível. Usando busca simples.")
 
 # Função utilitária para carregar dados
 @st.cache_data
@@ -131,7 +116,24 @@ df['__fun_lower'] = df[fun_col].astype(str).str.strip()
 st.write('Base carregada — linhas:', len(df))
 
 query = st.text_input('Nome da função para buscar', value='')
-min_score = st.slider('Sensibilidade da busca (fuzzy) — menor = mais permissiva', 50, 100, 80)
+
+# Mostrar controle de sensibilidade apenas se fuzzy estiver disponível
+if FUZZY_AVAILABLE:
+    min_score = st.slider('Sensibilidade da busca (fuzzy) — menor = mais permissiva', 50, 100, 80)
+else:
+    min_score = 0  # Não usado na busca simples
+
+def fuzzy_search(query, choices, min_score, limit=10):
+    """Função unificada para busca fuzzy com ambas as bibliotecas"""
+    if FUZZY_LIB == "rapidfuzz":
+        matches = process.extract(query, choices, scorer=fuzz.WRatio, limit=limit)
+        return [(match[0], match[1], match[2]) for match in matches]
+    elif FUZZY_LIB == "fuzzywuzzy":
+        from fuzzywuzzy import process as fuzzy_process
+        matches = fuzzy_process.extract(query, choices, limit=limit)
+        return [(match[0], match[1], idx) for idx, match in enumerate(matches)]
+    else:
+        return []
 
 if query:
     # Busca exata (case-insensitive)
@@ -150,35 +152,71 @@ if query:
             for a in [x.strip() for x in acts.split(sep) if x.strip()]:
                 st.write('- ' + a)
     else:
-        # Busca fuzzy
-        choices = df['__fun_lower'].tolist()
-        matches = process.extract(query, choices, scorer=fuzz.WRatio, limit=10)
-        # matches: list of (choice, score, index)
-        # Filtra por min_score
-        good = [m for m in matches if m[1] >= min_score]
-        if not good:
-            st.warning('Nenhuma correspondência com o nível de sensibilidade escolhido. Tente reduzir a exigência ou verifique sua digitação.')
-            st.write('Melhores sugestões:')
-            for m in matches[:5]:
-                st.write(f"{m[0]} — {m[1]}%")
+        if FUZZY_AVAILABLE:
+            # Busca fuzzy
+            choices = df['__fun_lower'].tolist()
+            matches = fuzzy_search(query, choices, min_score, limit=10)
+            
+            # Filtra por min_score
+            good = [m for m in matches if m[1] >= min_score]
+            
+            if not good:
+                st.warning('Nenhuma correspondência com o nível de sensibilidade escolhido. Tente reduzir a exigência ou verifique sua digitação.')
+                st.write('Melhores sugestões:')
+                for m in matches[:5]:
+                    st.write(f"{m[0]} — {m[1]}%")
+            else:
+                st.success(f'{len(good)} sugestão(ões) encontrada(s) (score >= {min_score})')
+                for m in good:
+                    choice_text = m[0]
+                    score = m[1]
+                    # recupera a linha correspondente
+                    row = df[df['__fun_lower'] == choice_text].iloc[0]
+                    st.subheader(f"{row[fun_col]} — {score}%")
+                    st.write('CBO:', row[cbo_col])
+                    st.markdown('**Atividades:**')
+                    acts = str(row[act_col]).replace('\r', '\n')
+                    sep = ';' if ';' in acts else '\n'
+                    for a in [x.strip() for x in acts.split(sep) if x.strip()]:
+                        st.write('- ' + a)
         else:
-            st.success(f'{len(good)} sugestão(ões) encontrada(s) (score >= {min_score})')
-            for m in good:
-                choice_text = m[0]
-                score = m[1]
-                # recupera a linha correspondente
-                row = df[df['__fun_lower'] == choice_text].iloc[0]
-                st.subheader(f"{row[fun_col]} — {score}%")
-                st.write('CBO:', row[cbo_col])
-                st.markdown('**Atividades:**')
-                acts = str(row[act_col]).replace('\r', '\n')
-                sep = ';' if ';' in acts else '\n'
-                for a in [x.strip() for x in acts.split(sep) if x.strip()]:
-                    st.write('- ' + a)
+            # Busca simples (sem fuzzy)
+            st.warning("Biblioteca fuzzy não disponível. Instale rapidfuzz ou fuzzywuzzy para buscas avançadas.")
+            # Busca por substring
+            mask_substring = df['__fun_lower'].str.lower().str.contains(query.strip().lower(), na=False)
+            results_sub = df[mask_substring]
+            if not results_sub.empty:
+                st.success(f'Encontrado {len(results_sub)} correspondência(s) por texto parcial')
+                for idx, row in results_sub.iterrows():
+                    st.subheader(row[fun_col])
+                    st.write('CBO:', row[cbo_col])
+                    st.markdown('**Atividades:**')
+                    acts = str(row[act_col]).replace('\r', '\n')
+                    sep = ';' if ';' in acts else '\n'
+                    for a in [x.strip() for x in acts.split(sep) if x.strip()]:
+                        st.write('- ' + a)
+            else:
+                st.warning('Nenhuma correspondência encontrada. Tente outros termos.')
 
 # Permite baixar a base atual (por segurança/backup)
 csv = df.drop(columns=['__fun_lower']).to_csv(index=False)
 st.download_button('Baixar base atual (CSV)', data=csv, file_name='base_descritivo_funcoes.csv', mime='text/csv')
+
+# Instruções de instalação se necessário
+if not FUZZY_AVAILABLE:
+    st.warning("""
+    **Para melhorar as buscas, instale uma biblioteca fuzzy:**
+    
+    **Opção 1 (Recomendada):**
+    ```bash
+    pip install rapidfuzz
+    ```
+    
+    **Opção 2:**
+    ```bash
+    pip install fuzzywuzzy python-levenshtein
+    ```
+    """)
 
 st.info('Dica: para melhorar a busca, padronize os nomes das funções (ex.: sem abreviações) e mantenha as atividades separadas por ponto e vírgula ou quebra de linha.')
 
